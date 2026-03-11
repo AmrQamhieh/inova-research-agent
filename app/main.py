@@ -1,8 +1,12 @@
 from fastapi import FastAPI, HTTPException
 from app.schemas import QueryRequest, QueryResponse
 from app.agent.graph import agent_graph
+from app.database import engine, SessionLocal
+from app.models import Base, Conversation
 
 app = FastAPI(title="Inova Research Agent API")
+
+Base.metadata.create_all(bind=engine)
 
 
 @app.get("/")
@@ -29,6 +33,17 @@ def query(request: QueryRequest):
                 "response": None,
             }
         )
+
+        db = SessionLocal()
+        try:
+            conversation = Conversation(
+                question=request.text,
+                response=result["response"],
+            )
+            db.add(conversation)
+            db.commit()
+        finally:
+            db.close()
 
         return QueryResponse(response=result["response"])
     except Exception as e:
