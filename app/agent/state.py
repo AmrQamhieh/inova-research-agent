@@ -1,8 +1,8 @@
-from typing import TypedDict, Optional
+from typing import Annotated, Optional, TypedDict
+from langgraph.graph.message import add_messages
 
 
 class AgentState(TypedDict):
-    question: str
+    messages: Annotated[list, add_messages]
     route: Optional[str]
     search_results: Optional[str]
-    response: Optional[str]
