@@ -1,12 +1,13 @@
 import os
 from functools import lru_cache
 
-from dotenv import load_dotenv
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 
-load_dotenv()
+from app.config import load_dotenv_if_enabled
+
+load_dotenv_if_enabled()
 
 
 class DatabaseConfigurationError(RuntimeError):
@@ -23,10 +24,16 @@ def get_database_url() -> str:
     postgres_db = os.getenv("POSTGRES_DB")
     postgres_user = os.getenv("POSTGRES_USER")
     postgres_password = os.getenv("POSTGRES_PASSWORD")
-    postgres_host = os.getenv("POSTGRES_HOST", "db")
-    postgres_port = os.getenv("POSTGRES_PORT", "5432")
+    postgres_host = os.getenv("POSTGRES_HOST")
+    postgres_port = os.getenv("POSTGRES_PORT")
 
-    if postgres_db and postgres_user and postgres_password:
+    if (
+        postgres_db
+        and postgres_user
+        and postgres_password
+        and postgres_host
+        and postgres_port
+    ):
         return (
             f"postgresql://{postgres_user}:{postgres_password}"
             f"@{postgres_host}:{postgres_port}/{postgres_db}"
@@ -34,7 +41,8 @@ def get_database_url() -> str:
 
     raise DatabaseConfigurationError(
         "Database configuration is missing. Set DATABASE_URL directly or define "
-        "POSTGRES_DB, POSTGRES_USER, and POSTGRES_PASSWORD in your environment/.env file."
+        "POSTGRES_DB, POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_HOST, and POSTGRES_PORT "
+        "in the environment."
     )
 
 

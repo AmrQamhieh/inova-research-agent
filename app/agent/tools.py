@@ -1,13 +1,13 @@
 import os
 from tavily import TavilyClient
-from dotenv import load_dotenv
 
-load_dotenv()
+from app.config import load_dotenv_if_enabled
 
-tavily_api_key = os.getenv("TAVILY_API_KEY")
+load_dotenv_if_enabled()
 
 
 def search_web(query: str) -> str:
+    tavily_api_key = os.getenv("TAVILY_API_KEY")
     if not tavily_api_key:
         return "Search is unavailable because TAVILY_API_KEY is missing."
 

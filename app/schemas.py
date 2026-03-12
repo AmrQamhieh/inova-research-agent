@@ -7,4 +7,5 @@ class QueryRequest(BaseModel):
 
 
 class QueryResponse(BaseModel):
+    thread_id: str
     response: str

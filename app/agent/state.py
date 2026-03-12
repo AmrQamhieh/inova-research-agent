@@ -6,3 +6,4 @@ class AgentState(TypedDict):
     messages: Annotated[list, add_messages]
     route: Optional[str]
     search_results: Optional[str]
+    tools_invoked: list[str]

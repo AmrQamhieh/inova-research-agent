@@ -2,6 +2,9 @@ from app.agent.state import AgentState
 from app.llm import ask_llm
 from app.agent.tools import search_web
 from langchain_core.messages import AIMessage, HumanMessage
+import logging
+
+logger = logging.getLogger("app.agent")
 
 def router_node(state: AgentState) -> AgentState:
     question = get_latest_user_message(state)
@@ -38,8 +41,10 @@ Latest User Question:
     else:
         route = "general"
 
-    print(f"[Router] Question: {question}")
-    print(f"[Router] Decision: {route}")
+    logger.info(
+        "router_decision",
+        extra={"event": "router_decision", "route": route},
+    )
 
     return {
         "route": route
@@ -47,7 +52,7 @@ Latest User Question:
 
 
 def general_node(state: AgentState) -> AgentState:
-    print("[General] Answering directly.")
+    logger.info("general_node", extra={"event": "general_node"})
 
     question = get_latest_user_message(state)
     history = format_conversation_history(state)
@@ -96,16 +101,19 @@ def format_conversation_history(state: AgentState) -> str:
 def search_node(state: AgentState) -> AgentState:
     question = get_latest_user_message(state)
 
-    print(f"[Search] Running search for: {question}")
+    logger.info("tool_invoke", extra={"event": "tool_invoke", "tool": "search_web"})
     results = search_web(question)
 
+    tools = list(state.get("tools_invoked") or [])
+    tools.append("search_web")
     return {
-        "search_results": results
+        "search_results": results,
+        "tools_invoked": tools,
     }
 
 
 def answer_with_search_node(state: AgentState) -> AgentState:
-    print("[SearchAnswer] Building final answer from search results.")
+    logger.info("answer_with_search_node", extra={"event": "answer_with_search_node"})
 
     question = get_latest_user_message(state)
     history = format_conversation_history(state)
