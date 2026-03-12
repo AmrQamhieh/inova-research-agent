@@ -1,4 +1,15 @@
 ---
+- name: Validate required deployment secrets
+  ansible.builtin.assert:
+    that:
+      - openai_api_key is defined
+      - openai_api_key | length > 0
+      - openai_model is defined
+      - openai_model | length > 0
+      - tavily_api_key is defined
+      - tavily_api_key | length > 0
+    fail_msg: "Required application secrets are missing. Define openai_api_key, openai_model, and tavily_api_key."
+
 - name: Ensure compose directory exists
   ansible.builtin.file:
     path: "{{ app_compose_dir }}"
@@ -24,6 +35,8 @@
     mode: "0644"
 
 - name: Pull latest application code
+  become: true
+  become_user: "{{ app_user }}"
   ansible.builtin.git:
     repo: "{{ app_repo_url }}"
     dest: "{{ app_src_dir }}"
@@ -31,61 +44,115 @@
     update: true
     force: true
 
-- name: Ensure postgres data directory exists (LVM bind mount only)
-  ansible.builtin.file:
-    path: "{{ effective_db_data_dir }}"
-    state: directory
-    owner: "{{ app_user }}"
-    group: "{{ app_group }}"
-    mode: "0700"
-  when: lvm_enabled | bool
-
-- name: Verify postgres data directory is writable (LVM bind mount only)
-  ansible.builtin.command:
-    cmd: "test -w {{ effective_db_data_dir }}"
-  register: pgdata_writable
-  changed_when: false
-  failed_when: pgdata_writable.rc != 0
-  when: lvm_enabled | bool
-
 - name: Stop existing stack cleanly if present
+  become: true
+  become_user: "{{ app_user }}"
   ansible.builtin.command:
     cmd: "{{ podman_compose_cmd }} -f {{ app_compose_dir }}/{{ compose_file_name }} down"
     chdir: "{{ app_compose_dir }}"
   environment:
-    XDG_RUNTIME_DIR: "/run/user/{{ ansible_user_uid }}"
+    HOME: "/home/{{ app_user }}"
+    PATH: "/home/{{ app_user }}/.local/bin:{{ ansible_env.PATH }}"
   register: compose_down_result
   failed_when: false
   changed_when: >
     'Stopping' in compose_down_result.stdout or
-    'Removing' in compose_down_result.stdout or
-    compose_down_result.rc == 0
+    'Removing' in compose_down_result.stdout
 
-- name: Preflight - ensure application port is free on host
-  ansible.builtin.wait_for:
-    host: "0.0.0.0"
-    port: "{{ app_port }}"
-    state: stopped
-    timeout: 2
-  register: port_check
-  failed_when: port_check is failed
+- name: Ensure postgres data directory exists
+  ansible.builtin.file:
+    path: "{{ effective_db_data_dir }}"
+    state: directory
+    mode: "0700"
+
+- name: Ensure postgres data directory ownership is correct for rootless Podman
+  become: true
+  become_user: "{{ app_user }}"
+  ansible.builtin.command:
+    cmd: "podman unshare chown -R 999:999 {{ effective_db_data_dir }}"
+  changed_when: false
 
 - name: Start updated stack
+  become: true
+  become_user: "{{ app_user }}"
   ansible.builtin.command:
     cmd: "{{ podman_compose_cmd }} -f {{ app_compose_dir }}/{{ compose_file_name }} up -d --build"
     chdir: "{{ app_compose_dir }}"
   environment:
-    XDG_RUNTIME_DIR: "/run/user/{{ ansible_user_uid }}"
+    HOME: "/home/{{ app_user }}"
+    PATH: "/home/{{ app_user }}/.local/bin:{{ ansible_env.PATH }}"
   register: compose_up_result
-  failed_when: compose_up_result.rc != 0
   changed_when: true
 
 - name: Wait for application health endpoint
-  ansible.builtin.uri:
-    url: "{{ app_healthcheck_url }}"
-    method: GET
-    status_code: 200
-  register: healthcheck_result
-  retries: "{{ healthcheck_retries }}"
-  delay: "{{ healthcheck_delay }}"
-  until: healthcheck_result.status == 200
+  block:
+    - name: Check health endpoint until ready
+      ansible.builtin.uri:
+        url: "{{ app_healthcheck_url }}"
+        method: GET
+        status_code: 200
+      register: healthcheck_result
+      retries: "{{ healthcheck_retries }}"
+      delay: "{{ healthcheck_delay }}"
+      until: healthcheck_result.status == 200
+
+  rescue:
+    - name: Show container status after failed health check
+      become: true
+      become_user: "{{ app_user }}"
+      ansible.builtin.command:
+        cmd: podman ps -a
+      environment:
+        HOME: "/home/{{ app_user }}"
+        PATH: "/home/{{ app_user }}/.local/bin:{{ ansible_env.PATH }}"
+      register: failed_ps
+      changed_when: false
+      failed_when: false
+
+    - name: Print container status
+      ansible.builtin.debug:
+        var: failed_ps.stdout_lines
+
+    - name: Show app logs after failed health check
+      become: true
+      become_user: "{{ app_user }}"
+      ansible.builtin.command:
+        cmd: podman logs {{ app_name }}-app --tail 100
+      environment:
+        HOME: "/home/{{ app_user }}"
+        PATH: "/home/{{ app_user }}/.local/bin:{{ ansible_env.PATH }}"
+      register: app_logs
+      changed_when: false
+      failed_when: false
+
+    - name: Print app logs
+      ansible.builtin.debug:
+        var: app_logs.stdout_lines
+
+    - name: Print app stderr logs
+      ansible.builtin.debug:
+        var: app_logs.stderr_lines
+
+    - name: Show postgres logs after failed health check
+      become: true
+      become_user: "{{ app_user }}"
+      ansible.builtin.command:
+        cmd: podman logs {{ app_name }}-db --tail 100
+      environment:
+        HOME: "/home/{{ app_user }}"
+        PATH: "/home/{{ app_user }}/.local/bin:{{ ansible_env.PATH }}"
+      register: db_logs
+      changed_when: false
+      failed_when: false
+
+    - name: Print postgres logs
+      ansible.builtin.debug:
+        var: db_logs.stdout_lines
+
+    - name: Print postgres stderr logs
+      ansible.builtin.debug:
+        var: db_logs.stderr_lines
+
+    - name: Fail deployment clearly
+      ansible.builtin.fail:
+        msg: "Application health check failed. See printed container status and logs above."

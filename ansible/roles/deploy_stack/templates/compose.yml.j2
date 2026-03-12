@@ -18,14 +18,5 @@ services:
     env_file:
       - "{{ app_env_path }}"
     volumes:
-{% if lvm_enabled | bool %}
       - "{{ effective_db_data_dir }}:/var/lib/postgresql/data:Z"
-{% else %}
-      - "pgdata:/var/lib/postgresql/data"
-{% endif %}
     restart: unless-stopped
-
-{% if not (lvm_enabled | bool) %}
-volumes:
-  pgdata:
-{% endif %}
