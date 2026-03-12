@@ -24,8 +24,8 @@ using modern LLM orchestration frameworks.
 
 The current architecture implemented in this repository is:
 
-User ↓ Gradio UI / API Client ↓ FastAPI Backend ↓ LangGraph Agent
-Workflow ↓ Router Node ↓ General LLM Response OR Search Tool ↓
+User-> Gradio UI / API Client -> FastAPI Backend ->LangGraph Agent
+Workflow -> Router Node -> General LLM Response OR Search Tool ->
 PostgreSQL Conversation Memory
 
 The agent analyzes the user query and decides whether the request can be
