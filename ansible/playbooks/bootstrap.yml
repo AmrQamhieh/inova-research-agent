@@ -1,0 +1,7 @@
+---
+- name: Bootstrap application server
+  hosts: app_servers
+  gather_facts: true
+
+  roles:
+    - bootstrap

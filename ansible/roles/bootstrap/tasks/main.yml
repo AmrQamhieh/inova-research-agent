@@ -1,0 +1,118 @@
+---
+- name: Install required packages
+  become: true
+  ansible.builtin.dnf:
+    name: "{{ required_packages }}"
+    state: present
+    update_cache: true
+
+- name: Ensure firewalld is enabled and running
+  become: true
+  ansible.builtin.service:
+    name: firewalld
+    state: started
+    enabled: true
+
+- name: Open required firewall ports
+  become: true
+  ansible.posix.firewalld:
+    port: "{{ item }}"
+    permanent: true
+    state: enabled
+    immediate: true
+  loop: "{{ firewall_ports }}"
+
+- name: Validate LVM inputs when enabled
+  ansible.builtin.assert:
+    that:
+      - lvm_device | length > 0
+      - lvm_mount_path | length > 0
+      - lvm_vg_name | length > 0
+      - lvm_lv_name | length > 0
+    fail_msg: "LVM is enabled but one or more required LVM variables are missing."
+  when: lvm_enabled | bool
+
+- name: Check whether LVM device exists
+  become: true
+  ansible.builtin.stat:
+    path: "{{ lvm_device }}"
+  register: lvm_device_stat
+  when: lvm_enabled | bool
+
+- name: Fail if requested LVM device does not exist
+  ansible.builtin.fail:
+    msg: "Requested LVM device {{ lvm_device }} does not exist on the target host."
+  when:
+    - lvm_enabled | bool
+    - not lvm_device_stat.stat.exists
+
+- name: Ensure LVM physical volume exists
+  become: true
+  community.general.lvg:
+    vg: "{{ lvm_vg_name }}"
+    pvs: "{{ lvm_device }}"
+  when: lvm_enabled | bool
+
+- name: Ensure LVM logical volume exists
+  become: true
+  community.general.lvol:
+    vg: "{{ lvm_vg_name }}"
+    lv: "{{ lvm_lv_name }}"
+    size: "{{ lvm_lv_size }}"
+    shrink: false
+  when: lvm_enabled | bool
+
+- name: Ensure filesystem exists on LVM logical volume
+  become: true
+  community.general.filesystem:
+    fstype: "{{ lvm_fs_type }}"
+    dev: "/dev/{{ lvm_vg_name }}/{{ lvm_lv_name }}"
+  when: lvm_enabled | bool
+
+- name: Ensure mount path exists
+  become: true
+  ansible.builtin.file:
+    path: "{{ lvm_mount_path }}"
+    state: directory
+    mode: "0755"
+  when: lvm_enabled | bool
+
+- name: Mount logical volume for postgres persistence
+  become: true
+  ansible.posix.mount:
+    path: "{{ lvm_mount_path }}"
+    src: "/dev/{{ lvm_vg_name }}/{{ lvm_lv_name }}"
+    fstype: "{{ lvm_fs_type }}"
+    state: mounted
+  when: lvm_enabled | bool
+
+- name: Ensure application base directory exists
+  ansible.builtin.file:
+    path: "{{ app_base_dir }}"
+    state: directory
+    owner: "{{ app_user }}"
+    group: "{{ app_group }}"
+    mode: "0755"
+
+- name: Ensure application subdirectories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ app_user }}"
+    group: "{{ app_group }}"
+    mode: "0755"
+  loop:
+    - "{{ app_src_dir }}"
+    - "{{ app_compose_dir }}"
+    - "{{ app_base_dir }}/data"
+    - "{{ app_base_dir }}/logs"
+    - "{{ effective_db_data_dir }}"
+
+- name: Clone or update repository
+  ansible.builtin.git:
+    repo: "{{ app_repo_url }}"
+    dest: "{{ app_src_dir }}"
+    version: "{{ app_repo_branch }}"
+    update: true
+    force: true
+  become: false

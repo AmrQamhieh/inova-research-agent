@@ -1,0 +1,45 @@
+app_name: inova-research-agent
+app_user: "{{ ansible_user }}"
+app_group: "{{ ansible_user }}"
+
+app_base_dir: "/home/{{ app_user }}/apps/{{ app_name }}"
+# NOTE: Using a new rootless-owned src dir avoids earlier root-owned .git leftovers
+app_src_dir: "{{ app_base_dir }}/src_rootless"
+app_compose_dir: "{{ app_base_dir }}/deploy"
+app_env_path: "{{ app_compose_dir }}/.env"
+
+app_repo_url: "https://github.com/AmrQamhieh/inova-research-agent"
+app_repo_branch: "develop"
+
+app_port: 8000
+
+db_name: inova_agent
+db_user: inova
+db_password: "inova_pass"
+db_host: db
+db_port: 5432
+
+postgres_image: "docker.io/library/postgres:16-alpine"
+
+# NOTE: old path may be root-owned from earlier rootful runs; use a fresh rootless-owned path
+db_data_dir: "{{ app_base_dir }}/data/postgres_rootless"
+
+# Optional LVM support
+lvm_enabled: false
+lvm_device: ""
+lvm_vg_name: "appvg"
+lvm_lv_name: "postgres_lv"
+lvm_lv_size: "5g"
+lvm_mount_path: "/srv/postgres-data"
+lvm_fs_type: "xfs"
+
+# If LVM is enabled and succeeds, we will use the mount path for postgres data.
+effective_db_data_dir: "{{ lvm_mount_path if lvm_enabled else db_data_dir }}"
+
+required_packages:
+  - git
+  - podman
+  - python3
+  - python3-pip
+  - firewalld
+  - lvm2

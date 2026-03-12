@@ -1,0 +1,91 @@
+---
+- name: Ensure compose directory exists
+  ansible.builtin.file:
+    path: "{{ app_compose_dir }}"
+    state: directory
+    owner: "{{ app_user }}"
+    group: "{{ app_group }}"
+    mode: "0755"
+
+- name: Template environment file
+  ansible.builtin.template:
+    src: env.j2
+    dest: "{{ app_env_path }}"
+    owner: "{{ app_user }}"
+    group: "{{ app_group }}"
+    mode: "0600"
+
+- name: Template compose file
+  ansible.builtin.template:
+    src: compose.yml.j2
+    dest: "{{ app_compose_dir }}/{{ compose_file_name }}"
+    owner: "{{ app_user }}"
+    group: "{{ app_group }}"
+    mode: "0644"
+
+- name: Pull latest application code
+  ansible.builtin.git:
+    repo: "{{ app_repo_url }}"
+    dest: "{{ app_src_dir }}"
+    version: "{{ app_repo_branch }}"
+    update: true
+    force: true
+
+- name: Ensure postgres data directory exists (LVM bind mount only)
+  ansible.builtin.file:
+    path: "{{ effective_db_data_dir }}"
+    state: directory
+    owner: "{{ app_user }}"
+    group: "{{ app_group }}"
+    mode: "0700"
+  when: lvm_enabled | bool
+
+- name: Verify postgres data directory is writable (LVM bind mount only)
+  ansible.builtin.command:
+    cmd: "test -w {{ effective_db_data_dir }}"
+  register: pgdata_writable
+  changed_when: false
+  failed_when: pgdata_writable.rc != 0
+  when: lvm_enabled | bool
+
+- name: Stop existing stack cleanly if present
+  ansible.builtin.command:
+    cmd: "{{ podman_compose_cmd }} -f {{ app_compose_dir }}/{{ compose_file_name }} down"
+    chdir: "{{ app_compose_dir }}"
+  environment:
+    XDG_RUNTIME_DIR: "/run/user/{{ ansible_user_uid }}"
+  register: compose_down_result
+  failed_when: false
+  changed_when: >
+    'Stopping' in compose_down_result.stdout or
+    'Removing' in compose_down_result.stdout or
+    compose_down_result.rc == 0
+
+- name: Preflight - ensure application port is free on host
+  ansible.builtin.wait_for:
+    host: "0.0.0.0"
+    port: "{{ app_port }}"
+    state: stopped
+    timeout: 2
+  register: port_check
+  failed_when: port_check is failed
+
+- name: Start updated stack
+  ansible.builtin.command:
+    cmd: "{{ podman_compose_cmd }} -f {{ app_compose_dir }}/{{ compose_file_name }} up -d --build"
+    chdir: "{{ app_compose_dir }}"
+  environment:
+    XDG_RUNTIME_DIR: "/run/user/{{ ansible_user_uid }}"
+  register: compose_up_result
+  failed_when: compose_up_result.rc != 0
+  changed_when: true
+
+- name: Wait for application health endpoint
+  ansible.builtin.uri:
+    url: "{{ app_healthcheck_url }}"
+    method: GET
+    status_code: 200
+  register: healthcheck_result
+  retries: "{{ healthcheck_retries }}"
+  delay: "{{ healthcheck_delay }}"
+  until: healthcheck_result.status == 200

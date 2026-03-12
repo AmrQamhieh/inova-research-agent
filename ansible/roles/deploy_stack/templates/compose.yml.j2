@@ -1,0 +1,31 @@
+version: "3.9"
+
+services:
+  app:
+    build: "{{ app_src_dir }}"
+    container_name: {{ app_name }}-app
+    ports:
+      - "{{ app_port }}:8000"
+    env_file:
+      - "{{ app_env_path }}"
+    depends_on:
+      - db
+    restart: unless-stopped
+
+  db:
+    image: {{ postgres_image }}
+    container_name: {{ app_name }}-db
+    env_file:
+      - "{{ app_env_path }}"
+    volumes:
+{% if lvm_enabled | bool %}
+      - "{{ effective_db_data_dir }}:/var/lib/postgresql/data:Z"
+{% else %}
+      - "pgdata:/var/lib/postgresql/data"
+{% endif %}
+    restart: unless-stopped
+
+{% if not (lvm_enabled | bool) %}
+volumes:
+  pgdata:
+{% endif %}
