@@ -1,0 +1,7 @@
+---
+- name: Deploy application stack
+  hosts: app_servers
+  gather_facts: true
+  become: false
+  roles:
+    - deploy_stack

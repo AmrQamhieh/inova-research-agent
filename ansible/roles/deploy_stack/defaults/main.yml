@@ -1,0 +1,5 @@
+compose_file_name: "docker-compose.yml"
+podman_compose_cmd: "/home/{{ app_user }}/.local/bin/podman-compose"
+app_healthcheck_url: "http://127.0.0.1:{{ app_port }}/health"
+healthcheck_retries: 10
+healthcheck_delay: 5
