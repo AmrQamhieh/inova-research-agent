@@ -20,6 +20,16 @@ spec:
           ports:
             - containerPort: 8000
           env:
+            - name: LOAD_DOTENV
+              valueFrom:
+                configMapKeyRef:
+                  name: inova-config
+                  key: LOAD_DOTENV
+            - name: OPENAI_MODEL
+              valueFrom:
+                configMapKeyRef:
+                  name: inova-config
+                  key: OPENAI_MODEL
             - name: POSTGRES_DB
               valueFrom:
                 configMapKeyRef:
@@ -46,12 +56,17 @@ spec:
                   name: inova-config
                   key: POSTGRES_PORT
             - name: DATABASE_URL
-              value: "postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@$(POSTGRES_HOST):$(POSTGRES_PORT)/$(POSTGRES_DB)"
+              value: "postgresql+psycopg2://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@$(POSTGRES_HOST):$(POSTGRES_PORT)/$(POSTGRES_DB)"
             - name: OPENAI_API_KEY
               valueFrom:
                 secretKeyRef:
                   name: inova-secret
                   key: OPENAI_API_KEY
+            - name: TAVILY_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: inova-secret
+                  key: TAVILY_API_KEY
           resources:
             requests:
               cpu: "250m"
