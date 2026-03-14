@@ -8,6 +8,7 @@ from openai import APIConnectionError, APITimeoutError, InternalServerError, Rat
 
 from app.config import load_dotenv_if_enabled
 from app.logging_config import monotonic_ms
+from app.metrics import record_llm_usage, record_error
 
 load_dotenv_if_enabled()
 
@@ -57,6 +58,14 @@ def ask_llm(prompt: str, system_prompt: str = "You are a helpful research assist
             completion_tokens = getattr(usage, "completion_tokens", None) if usage else None
             total_tokens = getattr(usage, "total_tokens", None) if usage else None
 
+            record_llm_usage(
+                model=MODEL_NAME,
+                duration=elapsed_ms / 1000,
+                prompt_tokens=prompt_tokens or 0,
+                completion_tokens=completion_tokens or 0,
+                total_tokens=total_tokens or 0,
+            )
+
             logger.info(
                 "llm_response",
                 extra={
@@ -70,9 +79,13 @@ def ask_llm(prompt: str, system_prompt: str = "You are a helpful research assist
                 },
             )
             return response.choices[0].message.content or "No response returned."
+
         except RateLimitError as exc:
             last_exc = exc
             elapsed_ms = monotonic_ms() - start_ms
+
+            record_error(component="llm", error_type=type(exc).__name__)
+
             logger.warning(
                 "llm_rate_limited",
                 extra={
@@ -84,9 +97,13 @@ def ask_llm(prompt: str, system_prompt: str = "You are a helpful research assist
             )
             if attempt >= max_retries:
                 raise LLMRateLimitError("LLM rate limit exceeded") from exc
+
         except (APITimeoutError, APIConnectionError, InternalServerError) as exc:
             last_exc = exc
             elapsed_ms = monotonic_ms() - start_ms
+
+            record_error(component="llm", error_type=type(exc).__name__)
+
             logger.warning(
                 "llm_transient_error",
                 extra={
@@ -101,7 +118,7 @@ def ask_llm(prompt: str, system_prompt: str = "You are a helpful research assist
                 raise LLMTransientError("LLM temporarily unavailable") from exc
 
         delay = min(max_delay_s, base_delay_s * (2**attempt))
-        delay = delay * (0.5 + random.random())  # jitter
+        delay = delay * (0.5 + random.random())
         logger.info(
             "llm_retry_sleep",
             extra={

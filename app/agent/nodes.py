@@ -1,10 +1,12 @@
 from app.agent.state import AgentState
 from app.llm import ask_llm
 from app.agent.tools import search_web
+from app.metrics import record_tool_invocation, record_error
 from langchain_core.messages import AIMessage, HumanMessage
 import logging
 
 logger = logging.getLogger("app.agent")
+
 
 def router_node(state: AgentState) -> AgentState:
     question = get_latest_user_message(state)
@@ -77,6 +79,7 @@ Latest User Question:
         "messages": [AIMessage(content=answer)]
     }
 
+
 def get_latest_user_message(state: AgentState) -> str:
     messages = state["messages"]
 
@@ -85,6 +88,7 @@ def get_latest_user_message(state: AgentState) -> str:
             return message.content
 
     raise ValueError("No user message found in state.")
+
 
 def format_conversation_history(state: AgentState) -> str:
     lines = []
@@ -95,21 +99,28 @@ def format_conversation_history(state: AgentState) -> str:
         elif isinstance(message, AIMessage):
             lines.append(f"Assistant: {message.content}")
 
-    return "\n".join(lines)    
+    return "\n".join(lines)
 
 
 def search_node(state: AgentState) -> AgentState:
     question = get_latest_user_message(state)
 
-    logger.info("tool_invoke", extra={"event": "tool_invoke", "tool": "search_web"})
-    results = search_web(question)
+    try:
+        record_tool_invocation("search_web")
+        logger.info("tool_invoke", extra={"event": "tool_invoke", "tool": "search_web"})
 
-    tools = list(state.get("tools_invoked") or [])
-    tools.append("search_web")
-    return {
-        "search_results": results,
-        "tools_invoked": tools,
-    }
+        results = search_web(question)
+
+        tools = list(state.get("tools_invoked") or [])
+        tools.append("search_web")
+        return {
+            "search_results": results,
+            "tools_invoked": tools,
+        }
+
+    except Exception as exc:
+        record_error(component="tool", error_type=type(exc).__name__)
+        raise
 
 
 def answer_with_search_node(state: AgentState) -> AgentState:

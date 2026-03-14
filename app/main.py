@@ -1,6 +1,7 @@
 import logging
 import uuid
 
+from prometheus_client import make_asgi_app
 from fastapi import FastAPI, HTTPException, Request
 from langchain_core.messages import AIMessage, HumanMessage
 
@@ -10,6 +11,7 @@ from app.database import (
     SessionLocal,
     get_engine,
 )
+from app.metrics import record_http_request, record_http_server_error, record_error
 from app.models import Base, Conversation
 from app.schemas import QueryRequest, QueryResponse
 from app.llm import LLMRateLimitError, LLMTransientError
@@ -19,6 +21,9 @@ configure_logging()
 logger = logging.getLogger("app.api")
 
 app = FastAPI(title="Inova Research Agent API")
+
+metrics_app = make_asgi_app()
+app.mount("/metrics", metrics_app)
 
 try:
     Base.metadata.create_all(bind=get_engine())
@@ -40,12 +45,24 @@ def health():
 async def request_logging(request: Request, call_next):
     request_id = request.headers.get("x-request-id") or str(uuid.uuid4())
     start_ms = monotonic_ms()
-    response = None
+
     try:
         response = await call_next(request)
-        return response
-    finally:
         elapsed_ms = monotonic_ms() - start_ms
+        duration_seconds = elapsed_ms / 1000
+
+        record_http_request(
+            method=request.method,
+            path=request.url.path,
+            status_code=response.status_code,
+            duration=duration_seconds,
+        )
+        record_http_server_error(
+            method=request.method,
+            path=request.url.path,
+            status_code=response.status_code,
+        )
+
         logger.info(
             "http_request",
             extra={
@@ -53,10 +70,43 @@ async def request_logging(request: Request, call_next):
                 "request_id": request_id,
                 "method": request.method,
                 "path": request.url.path,
-                "status_code": getattr(response, "status_code", None),
+                "status_code": response.status_code,
                 "latency_ms": elapsed_ms,
             },
         )
+
+        return response
+
+    except Exception as exc:
+        elapsed_ms = monotonic_ms() - start_ms
+        duration_seconds = elapsed_ms / 1000
+
+        record_http_request(
+            method=request.method,
+            path=request.url.path,
+            status_code=500,
+            duration=duration_seconds,
+        )
+        record_http_server_error(
+            method=request.method,
+            path=request.url.path,
+            status_code=500,
+        )
+        record_error(component="http", error_type=type(exc).__name__)
+
+        logger.info(
+            "http_request",
+            extra={
+                "event": "http_request",
+                "request_id": request_id,
+                "method": request.method,
+                "path": request.url.path,
+                "status_code": 500,
+                "latency_ms": elapsed_ms,
+            },
+        )
+
+        raise
 
 
 def build_thread_messages(thread_id: str, latest_user_text: str):
@@ -79,8 +129,6 @@ def build_thread_messages(thread_id: str, latest_user_text: str):
     messages.append(HumanMessage(content=latest_user_text))
     return messages
 
-
-from app.database import get_database_url
 
 @app.post("/query", response_model=QueryResponse)
 def query(request: QueryRequest):
@@ -133,13 +181,13 @@ def query(request: QueryRequest):
 
         return QueryResponse(
             thread_id=request.thread_id,
-            response=assistant_response)
+            response=assistant_response,
+        )
 
     except (LLMRateLimitError, LLMTransientError) as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
-
 
 
 @app.get("/history/{thread_id}")
