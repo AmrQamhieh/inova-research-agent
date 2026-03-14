@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: inova-backend-service
+  namespace: inova
+spec:
+  selector:
+    app: inova-backend
+  ports:
+    - port: 80
+      targetPort: 8000
+  type: LoadBalancer

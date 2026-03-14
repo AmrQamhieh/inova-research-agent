@@ -2,7 +2,7 @@ version: "3.9"
 
 services:
   app:
-    build: .
+    image: ghcr.io/amrqamhieh/inova-research-agent:latest
     container_name: inova-research-agent
     ports:
       - "8000:8000"

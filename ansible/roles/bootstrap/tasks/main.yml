@@ -106,13 +106,19 @@
     - "{{ app_compose_dir }}"
     - "{{ app_base_dir }}/data"
     - "{{ app_base_dir }}/logs"
-    - "{{ effective_db_data_dir }}"
+
+- name: Ensure postgres data directory exists
+  ansible.builtin.file:
+    path: "{{ effective_db_data_dir }}"
+    state: directory
+    mode: "0700"
 
 - name: Clone or update repository
+  become: true
+  become_user: "{{ app_user }}"
   ansible.builtin.git:
     repo: "{{ app_repo_url }}"
     dest: "{{ app_src_dir }}"
     version: "{{ app_repo_branch }}"
     update: true
     force: true
-  become: false
