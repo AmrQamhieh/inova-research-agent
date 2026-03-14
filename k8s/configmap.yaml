@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: inova-config
+  namespace: inova
+data:
+  LOAD_DOTENV: "false"
+  OPENAI_MODEL: "gpt-4o-mini"
+  POSTGRES_DB: "inova_agent"
+  POSTGRES_USER: "inova"
+  POSTGRES_HOST: "postgres"
+  POSTGRES_PORT: "5432"
