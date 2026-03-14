@@ -20,11 +20,6 @@ spec:
           ports:
             - containerPort: 8000
           env:
-            - name: LOAD_DOTENV
-              valueFrom:
-                configMapKeyRef:
-                  name: inova-config
-                  key: LOAD_DOTENV
             - name: OPENAI_MODEL
               valueFrom:
                 configMapKeyRef:
@@ -43,7 +38,7 @@ spec:
             - name: POSTGRES_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: inova-secret
+                  name: inova-secrets
                   key: POSTGRES_PASSWORD
             - name: POSTGRES_HOST
               valueFrom:
@@ -60,12 +55,12 @@ spec:
             - name: OPENAI_API_KEY
               valueFrom:
                 secretKeyRef:
-                  name: inova-secret
+                  name: inova-secrets
                   key: OPENAI_API_KEY
             - name: TAVILY_API_KEY
               valueFrom:
                 secretKeyRef:
-                  name: inova-secret
+                  name: inova-secrets
                   key: TAVILY_API_KEY
           resources:
             requests:

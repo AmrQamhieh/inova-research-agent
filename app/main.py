@@ -1,8 +1,8 @@
 import logging
 import uuid
 
-from prometheus_client import make_asgi_app
-from fastapi import FastAPI, HTTPException, Request
+from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
+from fastapi import FastAPI, HTTPException, Request, Response
 from langchain_core.messages import AIMessage, HumanMessage
 
 from app.agent.graph import agent_graph
@@ -22,8 +22,14 @@ logger = logging.getLogger("app.api")
 
 app = FastAPI(title="Inova Research Agent API")
 
-metrics_app = make_asgi_app()
-app.mount("/metrics", metrics_app)
+@app.get("/metrics", include_in_schema=False)
+def metrics():
+    # generate_latest() returns bytes. FastAPI's Response accepts bytes or str.
+    # To be perfectly safe across all ASGI implementations, we return bytes.
+    return Response(
+        content=generate_latest(),
+        media_type=CONTENT_TYPE_LATEST
+    )
 
 try:
     Base.metadata.create_all(bind=get_engine())

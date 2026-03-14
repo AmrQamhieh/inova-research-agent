@@ -3,10 +3,14 @@ kind: Service
 metadata:
   name: inova-backend-service
   namespace: inova
+  labels:
+    app: inova-backend
 spec:
+  type: LoadBalancer
   selector:
     app: inova-backend
   ports:
-    - port: 80
+    - name: http
+      port: 80
       targetPort: 8000
-  type: LoadBalancer
+      protocol: TCP
